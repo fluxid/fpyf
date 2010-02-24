@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from Cookie import BaseCookie, SimpleCookie, CookieError
-from datetime import date, datetime
+from datetime import date, datetime, time
+from functools import update_wrapper
 import re
 import time
 import traceback
@@ -137,7 +138,9 @@ class Application(object):
             try:
                 response = target(request, **args)
             except:
-                response = Response(traceback.format_exc(), 500, 'text/plain')
+                tb = traceback.format_exc()
+                print tb
+                response = Response(tb, 500, 'text/plain')
             
             if not isinstance(response, Response):
                 response = Response(response)
@@ -196,8 +199,18 @@ class Response(object):
         self.cookies = SimpleCookie()
 
     def set_cookie(self, key, value='', max_age=None, expires=None, path='/', domain=None, secure=False):
-        if type(expires) in (date, datetime):
-            if not expires.tzinfo:
+        if expires:
+            t = type(expires)
+            if t == date:
+                expires = datetime(expires.year, expires.month, expires.day)
+            elif t == time:
+                expires = datetime.now().replace(hour=expires.hour, minute=expire.minute, second=expire.second)
+            elif t in (int, long):
+                expires = datetime.fromtimestamp(expires)
+            else:
+                Exception('Cookie expire time has incorrect type')
+
+            if not (hasattr(expires, 'tzinfo') and expires.tzinfo):
                 expires = expires.replace(tzinfo=dateutil.tz.tzlocal())
             expires = expires.strftime('%a, %d %b %Y %H:%M:%S %z')
 
@@ -271,7 +284,7 @@ class ResponseProto(object):
         self.cookies[key] = (key, value, max_age, expires, path, domain, secure)
         
     def delete_cookie(self, key, path='/', domain=None):
-        self.set_cookie(key, max_age=0, path=path, domain=domain, expires=date(1970, 01, 01))
+        self.set_cookie(key, max_age=0, path=path, domain=domain, expires=datetime(1970, 01, 01))
 
     def redirect(self, location):
         if self._response: return self._response
@@ -316,3 +329,12 @@ class Controller(object):
         if isinstance(res, Response):
             return res
         return proto.make_response(res)
+
+def expose(_f=None, content_type=None, encoding=None):
+    def decorator(f):
+        return update_wrapper(Controller(f, content_type, encoding), f)
+
+    if _f is None or not callable(_f):
+        return decorator
+    else:
+        return decorator(_f)
