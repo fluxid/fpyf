@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 
-from Cookie import BaseCookie, SimpleCookie, CookieError
+from cgi import FieldStorage
+from Cookie import SimpleCookie, CookieError
 from datetime import date, datetime, time
 from functools import update_wrapper
 import re
-import time
+try:
+    from cStringIO import StringIO
+except:
+    from StringIO import StringIO
 import traceback
-from urllib import unquote, quote
 from urlparse import parse_qsl
 
 import dateutil
@@ -88,12 +91,6 @@ class Routing(object):
                     # TODO: Implement importing
                     print rpath
                     raise NotImplementedError('String targets not yet supported')
-                # XXX: I don't think expose is actually needed
-                #elif callable(target):
-                #    if not getattr(target, 'exposed', False):
-                #        print rpath
-                #        raise Exception('Callable not exposed!')
-                #else:
                 elif not callable(target):
                     print rpath
                     raise Exception('Unsupported target type!')
@@ -110,7 +107,7 @@ class Routing(object):
         while True:
             found = None
             for regex, target in a:
-                g = regex.match(request.path, start)
+                g = regex.match(request.mpath, start)
                 if g:
                     args.update(g.groupdict())
                     start = g.end()
@@ -125,10 +122,11 @@ class Routing(object):
                 return None
 
 class Application(object):
-    def __init__(self, routing, default_type='text/html', default_encoding='utf-8'):
+    def __init__(self, routing, default_type='text/html', default_encoding='utf-8', mountpoint='/'):
         self.route = routing
         self.default_type = default_type
         self.default_encoding = default_encoding
+        self.mountpoint = mountpoint
 
     def __call__(self, environ, start_response):
         request = Request(environ, self)
@@ -154,18 +152,35 @@ class Application(object):
 
 class Request(object):
     def __init__(self, environ, app=None):
-        self.path = environ['PATH_INFO'] # it's already urldecoded? lol...
+        self.mpath = self.path = environ['PATH_INFO']
+        if app and self.path.startswith(app.mountpoint):
+            self.mpath = self.path[len(app.mountpoint):]
+
+        self.method = environ['REQUEST_METHOD'].upper()
+
+        try:
+            self.content_length = int(environ.get('HTTP_CONTENT_LENGTH', 0))
+        except:
+            self.content_length = 0
+
+        self.content_type = environ.get('CONTENT_TYPE', '').lower()
+
         self.META = environ
         self.app = app
 
         self._get = None
         self._cookies = None
+        self._post = None
+        self._files = None
+
+        self._raw_fp = None
+
+    def _get_mdict(self, qs):
+        return MultiDict(parse_qsl(qs, True))
 
     def _get_get(self):
         if self._get is None:
-            self._get = {}
-            for key, param in parse_qsl(self.META.get('QUERY_STRING', ''), True):
-                self._get.setdefault(key, []).append(param)
+            self._get = self._get_mdict(self.META.get('QUERY_STRING', ''))
         return self._get
     
     def _get_cookies(self):
@@ -182,8 +197,61 @@ class Request(object):
                         self._cookies[key] = cookie[key].value
         return self._cookies
 
+    def _get_post(self):
+        if self._post is None:
+            self._parse_input()
+        return self._post
+
+    def _parse_input(self):
+        self._post = MultiDict()
+        self._files = MultiDict()
+
+        fp = None
+
+        if self.method == 'POST':
+            ctype = self.content_type.split(';')[0]
+
+            if self.content_length:
+                fp = self.META.get('wsgi.input', None)
+
+            if fp and ctype in ('application/x-www-form-urlencoded', 'multipart/form-data'):
+                environ = {
+                    'REQUEST_METHOD': 'POST',
+                    'CONTENT_TYPE': self.content_type,
+                    'CONTENT_LENGTH': str(self.content_length),
+                }
+                fields = FieldStorage(fp=fp, environ=environ, keep_blank_values=True)
+                print fields
+
+                for key in fields.keys():
+                    print key
+                    if not key:
+                        continue
+
+                    values = fields[key]
+                    print values
+                    if not isinstance(values, list):
+                        values = [values]
+
+                    for value in values:
+                        if value.file:
+                            print 'Files not yet supported. Filename: "%s" Field name: "%s" Content-type: "%s"' % \
+                                    (value.filename, key, value.type)
+                        else:
+                            self._post.add(key, value.value)
+                fp = None
+
+        self._raw_fp = fp or StringIO()
+
+    def _get_fp(self):
+        if self._raw_fp is None:
+            self._parse_input()
+        return self._raw_fp
+
     GET = property(_get_get)
     COOKIES = property(_get_cookies)
+    POST = property(_get_post)
+    fp = property(_get_fp)
 
 class Response(object):
     def __init__(self, content=None, status=200, content_type='text/html', encoding='utf-8', headers=None): #, default_type='text/html', default_encoding='utf-8'):
@@ -204,7 +272,7 @@ class Response(object):
             if t == date:
                 expires = datetime(expires.year, expires.month, expires.day)
             elif t == time:
-                expires = datetime.now().replace(hour=expires.hour, minute=expire.minute, second=expire.second)
+                expires = datetime.now().replace(hour=expires.hour, minute=expires.minute, second=expires.second)
             elif t in (int, long):
                 expires = datetime.fromtimestamp(expires)
             else:
@@ -338,3 +406,18 @@ def expose(_f=None, content_type=None, encoding=None):
         return decorator
     else:
         return decorator(_f)
+
+class MultiDict(dict):
+    '''
+    Small ripoff of django's MultiValueDict...
+    I don't see any need to do more. At least not now.
+    '''
+
+    def get1(self, key, default=None):
+        v = self.get(key, default)
+        if isinstance(v, list):
+            v = v[-1] if v else default
+        return v
+
+    def add(self, key, value):
+        self.setdefault(key, []).append(value)
