@@ -224,12 +224,10 @@ class Request(object):
                 print fields
 
                 for key in fields.keys():
-                    print key
                     if not key:
                         continue
 
                     values = fields[key]
-                    print values
                     if not isinstance(values, list):
                         values = [values]
 
