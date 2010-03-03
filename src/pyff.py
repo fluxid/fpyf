@@ -221,7 +221,6 @@ class Request(object):
                     'CONTENT_LENGTH': str(self.content_length),
                 }
                 fields = FieldStorage(fp=fp, environ=environ, keep_blank_values=True)
-                print fields
 
                 for key in fields.keys():
                     if not key:
