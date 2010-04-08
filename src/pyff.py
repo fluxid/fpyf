@@ -152,7 +152,7 @@ class Application(object):
 
 class Request(object):
     def __init__(self, environ, app=None):
-        self.mpath = self.path = environ['PATH_INFO']
+        self.mpath = self.path = environ['REQUEST_URI'].split('?', 1)[0]
         if app and self.path.startswith(app.mountpoint):
             self.mpath = self.path[len(app.mountpoint):]
 
