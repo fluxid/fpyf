@@ -352,9 +352,9 @@ class ResponseProto(object):
     def delete_cookie(self, key, path='/', domain=None):
         self.set_cookie(key, max_age=0, path=path, domain=domain, expires=datetime(1970, 01, 01))
 
-    def redirect(self, location):
+    def redirect(self, location, permanent=False):
         if self._response: return self._response
-        r = ResponseRedirect(location)
+        r = ResponseRedirect(location, permanent)
         self._apply(r)
         self._response = r
         return r
