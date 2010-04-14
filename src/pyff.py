@@ -324,15 +324,16 @@ class Response(object):
         return self.content
 
 class ResponseRedirect(Response):
-    def __init__(self, location):
+    def __init__(self, location, permanent=False):
         self.headers = {}
         self.location = location
+        self.permanent = permanent
 
         self.cookies = SimpleCookie()
 
     def prepare(self):
         self.headers['Location'] = self.location
-        self.status = 302
+        self.status = 301 if self.permanent else 302
         self.content = None
         self.content_type = None
 
