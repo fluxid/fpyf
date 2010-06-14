@@ -3,9 +3,9 @@
 from distutils.core import setup
 
 setup(
-    name='Pyff',
+    name='Fpyf',
     description='Small web "framework"',
     author='Tomasz Kowalczyk', 
-    py_modules=['pyff'],
+    py_modules=['fpyf'],
     package_dir = {'': 'src'},
 )
